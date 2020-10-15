@@ -150,6 +150,12 @@ func getProviderSpecificAnnotations(annotations map[string]string) (endpoint.Pro
 				Name:  fmt.Sprintf("scw/%s", attr),
 				Value: v,
 			})
+		} else if strings.HasPrefix(k, "external-dns.alpha.kubernetes.io/hcloud-") {
+			attr := strings.TrimPrefix(k, "external-dns.alpha.kubernetes.io/hcloud-")
+			providerSpecificAnnotations = append(providerSpecificAnnotations, endpoint.ProviderSpecificProperty{
+				Name:  fmt.Sprintf("hcloud/%s", attr),
+				Value: v,
+			})
 		}
 	}
 	return providerSpecificAnnotations, setIdentifier

@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 
 	hclouddns "git.blindage.org/21h/hcloud-dns"
@@ -28,10 +29,11 @@ import (
 )
 
 const (
-	hetznerCreate = "CREATE"
-	hetznerDelete = "DELETE"
-	hetznerUpdate = "UPDATE"
-	hetznerTTL    = 600
+	hetznerCreate                      = "CREATE"
+	hetznerDelete                      = "DELETE"
+	hetznerUpdate                      = "UPDATE"
+	hetznerTTL                         = 600
+	loadbalancerIngressIndexAnnotation = "hcloud/loadbalancer-ingress-index"
 )
 
 type HetznerChanges struct {
@@ -223,12 +225,29 @@ func (p *HetznerProvider) newHetznerChanges(action string, endpoints []*endpoint
 		if e.RecordTTL.IsConfigured() {
 			ttl = int(e.RecordTTL)
 		}
+
+		targetIngressIndex := 0
+		for _, providerSpecific := range e.ProviderSpecific {
+			if providerSpecific.Name == loadbalancerIngressIndexAnnotation && e.RecordType == "A" {
+				index, err := strconv.ParseInt(providerSpecific.Value, 10, 64)
+				if err != nil {
+					log.Warnf("Invalid value %q for annotation %s.", providerSpecific.Value, loadbalancerIngressIndexAnnotation)
+					continue
+				}
+				if int(index) >= len(e.Targets) {
+					log.Warnf("LoadBalancer index %d out of range. Only %d targets available.", index, len(e.Targets))
+					continue
+				}
+				targetIngressIndex = int(index)
+			}
+		}
+
 		change := &HetznerChanges{
 			Action: action,
 			ResourceRecordSet: hclouddns.HCloudRecord{
 				RecordType: hclouddns.RecordType(e.RecordType),
 				Name:       e.DNSName,
-				Value:      e.Targets[0],
+				Value:      e.Targets[targetIngressIndex],
 				TTL:        ttl,
 			},
 		}

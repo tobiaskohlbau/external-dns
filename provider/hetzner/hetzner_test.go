@@ -222,6 +222,18 @@ func TestHetznerProvider_ApplyChanges(t *testing.T) {
 	changes.Create = []*endpoint.Endpoint{
 		{DNSName: "test.org", Targets: endpoint.Targets{"target"}},
 		{DNSName: "test.test.org", Targets: endpoint.Targets{"target"}, RecordTTL: 666},
+		{
+			DNSName:    "test.test.org",
+			Targets:    endpoint.Targets{"target1", "target2"},
+			RecordTTL:  666,
+			RecordType: "A",
+			ProviderSpecific: []endpoint.ProviderSpecificProperty{
+				endpoint.ProviderSpecificProperty{
+					Name:  "hcloud/loadbalancer-ingress-index",
+					Value: "1",
+				},
+			},
+		},
 	}
 	changes.UpdateNew = []*endpoint.Endpoint{{DNSName: "test.test.org", Targets: endpoint.Targets{"target-new"}, RecordType: "A", RecordTTL: 777}}
 	changes.Delete = []*endpoint.Endpoint{{DNSName: "test.test.org", Targets: endpoint.Targets{"target"}, RecordType: "A"}}
@@ -229,5 +241,76 @@ func TestHetznerProvider_ApplyChanges(t *testing.T) {
 	err := mockedProvider.ApplyChanges(context.Background(), changes)
 	if err != nil {
 		t.Errorf("should not fail, %s", err)
+	}
+}
+
+func TestHetznerProvider_newHetznerChanges(t *testing.T) {
+	mockedClient := mockHCloudNew("myHetznerToken")
+	mockedProvider := &HetznerProvider{
+		Client: mockedClient,
+	}
+
+	tt := []struct {
+		action    string
+		endpoints []*endpoint.Endpoint
+		expect    []HetznerChanges
+	}{
+		{
+			endpoints: []*endpoint.Endpoint{
+				{
+					DNSName:    "test.test.org",
+					Targets:    endpoint.Targets{"target1", "target2"},
+					RecordTTL:  666,
+					RecordType: "A",
+				},
+				{
+					DNSName:    "test.test.org",
+					Targets:    endpoint.Targets{"target1", "target2"},
+					RecordTTL:  666,
+					RecordType: "A",
+					ProviderSpecific: []endpoint.ProviderSpecificProperty{
+						{
+							Name:  "hcloud/loadbalancer-ingress-index",
+							Value: "1",
+						},
+					},
+				},
+			},
+			expect: []HetznerChanges{
+				{
+					Action: "Create",
+					ResourceRecordSet: hclouddns.HCloudRecord{
+						RecordType: hclouddns.RecordType("A"),
+						Name:       "test.test.org",
+						Value:      "target1",
+						TTL:        666,
+					},
+				},
+				{
+					Action: "Create",
+					ResourceRecordSet: hclouddns.HCloudRecord{
+						RecordType: hclouddns.RecordType("A"),
+						Name:       "test.test.org",
+						Value:      "target2",
+						TTL:        666,
+					},
+				},
+			},
+		},
+	}
+
+	for _, input := range tt {
+		output := mockedProvider.newHetznerChanges(input.action, input.endpoints)
+		if len(output) != len(input.endpoints) {
+			t.Errorf("got %d changtes expected %d", len(output), len(input.endpoints))
+		}
+		for i, change := range output {
+			if change.Action != input.action {
+				t.Errorf("got action %s expected %s", change.Action, input.expect[i].Action)
+			}
+			if !reflect.DeepEqual(change.ResourceRecordSet, input.expect[i].ResourceRecordSet) {
+				t.Errorf("did not received expected ResourceRecordSet")
+			}
+		}
 	}
 }
